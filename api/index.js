@@ -1,69 +1,92 @@
-const express = require('express');
-const axios = require('axios');
-const cheerio = require('cheerio');
+const express = require("express");
+const axios = require("axios");
+const cheerio = require("cheerio");
 
-const app = express();
+const router = express.Router();
 
-// API Owner: Thenux-ai
+router.get("/", async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: "Missing TikTok video URL (?url=)" });
 
-app.get('/api/tiktok', async (req, res) => {
-    const { url } = req.query;
-    if (!url) {
-        return res.status(400).json({ error: 'Missing TikTok video URL (use ?url=)' });
-    }
-    try {
-        // Step 1: Get a token and cookies from the homepage (ssstik uses a token)
-        const homeResp = await axios.get('https://ssstik.io/');
-        const $home = cheerio.load(homeResp.data);
-        const token = $home('input[name="token"]').attr('value') || '';
-        const cookie = homeResp.headers['set-cookie'];
+  try {
+    // Get token and cookies from ssstik.io homepage
+    const home = await axios.get("https://ssstik.io/");
+    const $home = cheerio.load(home.data);
+    const token = $home('input[name="token"]').attr("value") || "";
+    const cookie = home.headers["set-cookie"];
 
-        // Step 2: Submit the video URL to ssstik
-        const postResp = await axios.post(
-            'https://ssstik.io/abc',
-            new URLSearchParams({
-                id: url,
-                locale: 'en',
-                tt: token
-            }).toString(),
-            {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Cookie': cookie ? cookie.join('; ') : '',
-                    'User-Agent': 'Mozilla/5.0 (compatible; TikTokDLBot/1.0; +https://github.com/Thenux-ai)'
-                }
-            }
-        );
+    // Submit video URL to ssstik.io/abc
+    const postResp = await axios.post(
+      "https://ssstik.io/abc",
+      new URLSearchParams({
+        id: url,
+        locale: "en",
+        tt: token,
+      }).toString(),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: cookie ? cookie.join("; ") : "",
+          "User-Agent":
+            "Mozilla/5.0 (compatible; TikTokDLBot/1.0; +https://github.com/Thenux-ai)",
+        },
+      }
+    );
 
-        // Step 3: Parse the result HTML
-        const $ = cheerio.load(postResp.data);
+    // Parse the result HTML
+    const $ = cheerio.load(postResp.data);
 
-        // Get video and audio links
-        const videoNoWM = $('a.download_link.without_watermark').attr('href') || '';
-        const videoWM = $('a.download_link.with_watermark').attr('href') || '';
-        const audio = $('a.download_link.music').attr('href') || '';
-        // Get meta (title, author, image)
-        const thumb = $('img.result_author').attr('src') || '';
-        const desc = $('p.maintext').text() || '';
-        const author = $('.result_author').attr('alt') || '';
+    // Download links extraction
+    const download = {
+      video_no_watermark: "",
+      video_no_watermark_hd: "",
+      video_watermark: "",
+      audio: "",
+    };
 
-        res.json({
-            owner: 'Thenux-ai',
-            input_url: url,
-            download: {
-                video_no_watermark: videoNoWM,
-                video_watermark: videoWM,
-                audio: audio
-            },
-            meta: {
-                thumb,
-                desc,
-                author
-            }
-        });
-    } catch (e) {
-        res.status(500).json({ error: 'Failed to fetch/download', detail: e.message });
-    }
+    // 1. Video without watermark (standard)
+    download.video_no_watermark =
+      $('a.download_link.without_watermark').attr("href") ||
+      $('a:contains("Without watermark")').attr("href") ||
+      "";
+
+    // 2. Video without watermark HD (may require extra step, but try)
+    download.video_no_watermark_hd =
+      $('a.download_link.without_watermark_hd').attr("href") ||
+      $('a:contains("Without watermark HD")').attr("href") ||
+      "";
+
+    // 3. Video with watermark (rare, but for completeness)
+    download.video_watermark =
+      $('a.download_link.with_watermark').attr("href") ||
+      $('a:contains("With watermark")').attr("href") ||
+      "";
+
+    // 4. Audio/MP3
+    download.audio =
+      $('a.download_link.music').attr("href") ||
+      $('a:contains("Download MP3")').attr("href") ||
+      "";
+
+    // Meta extraction (optional, improve as needed)
+    const meta = {
+      thumb: $("img.result_author").attr("src") || "",
+      desc: $("p.maintext").text() || "",
+      author: $("img.result_author").attr("alt") || "",
+    };
+
+    res.json({
+      owner: "Thenux-ai",
+      input_url: url,
+      download,
+      meta,
+    });
+  } catch (e) {
+    res.status(500).json({
+      error: "Failed to fetch or parse result",
+      detail: e.message,
+    });
+  }
 });
 
-module.exports = app;
+module.exports = router;
