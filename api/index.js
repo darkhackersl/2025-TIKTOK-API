@@ -2,9 +2,10 @@ const express = require("express");
 const axios = require("axios");
 const cheerio = require("cheerio");
 
+// Create router
 const router = express.Router();
 
-router.get("/", async (req, res) => {
+router.get("/api/tiktok", async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: "Missing TikTok video URL (?url=)" });
 
@@ -27,52 +28,39 @@ router.get("/", async (req, res) => {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           Cookie: cookie ? cookie.join("; ") : "",
-          "User-Agent":
-            "Mozilla/5.0 (compatible; TikTokDLBot/1.0; +https://github.com/Thenux-ai)",
+          "User-Agent": "Mozilla/5.0 (compatible; TikTokDLBot/1.0; +https://github.com/Thenux-ai)",
         },
       }
     );
 
-    // Parse the result HTML
+    // Parse result HTML
     const $ = cheerio.load(postResp.data);
 
     // Download links extraction
     const download = {
-      video_no_watermark: "",
-      video_no_watermark_hd: "",
-      video_watermark: "",
-      audio: "",
+      video_no_watermark:
+        $('a.download_link.without_watermark').attr("href") ||
+        $('a:contains("Without watermark")').attr("href") ||
+        "",
+      video_no_watermark_hd:
+        $('a.download_link.without_watermark_hd').attr("href") ||
+        $('a:contains("Without watermark HD")').attr("href") ||
+        "",
+      video_watermark:
+        $('a.download_link.with_watermark').attr("href") ||
+        $('a:contains("With watermark")').attr("href") ||
+        "",
+      audio:
+        $('a.download_link.music').attr("href") ||
+        $('a:contains("Download MP3")').attr("href") ||
+        ""
     };
 
-    // 1. Video without watermark (standard)
-    download.video_no_watermark =
-      $('a.download_link.without_watermark').attr("href") ||
-      $('a:contains("Without watermark")').attr("href") ||
-      "";
-
-    // 2. Video without watermark HD (may require extra step, but try)
-    download.video_no_watermark_hd =
-      $('a.download_link.without_watermark_hd').attr("href") ||
-      $('a:contains("Without watermark HD")').attr("href") ||
-      "";
-
-    // 3. Video with watermark (rare, but for completeness)
-    download.video_watermark =
-      $('a.download_link.with_watermark').attr("href") ||
-      $('a:contains("With watermark")').attr("href") ||
-      "";
-
-    // 4. Audio/MP3
-    download.audio =
-      $('a.download_link.music').attr("href") ||
-      $('a:contains("Download MP3")').attr("href") ||
-      "";
-
-    // Meta extraction (optional, improve as needed)
+    // Meta extraction
     const meta = {
       thumb: $("img.result_author").attr("src") || "",
       desc: $("p.maintext").text() || "",
-      author: $("img.result_author").attr("alt") || "",
+      author: $("img.result_author").attr("alt") || ""
     };
 
     res.json({
@@ -89,5 +77,10 @@ router.get("/", async (req, res) => {
   }
 });
 
-module.exports = router;
-      
+const app = express();
+app.use(router);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Express server running on port ${PORT}`);
+});
