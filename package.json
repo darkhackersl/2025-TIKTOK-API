@@ -4,7 +4,9 @@
   "description": "Unofficial TikTok download API using ssstik.io",
   "main": "api/index.js",
   "scripts": {
-    "start": "vercel dev"
+  
+  "start": "node api/index.js"
+}
   },
   "author": "Thenux-ai",
   "license": "MIT",
