@@ -2,7 +2,6 @@ const express = require("express");
 const axios = require("axios");
 const cheerio = require("cheerio");
 
-// Create router
 const router = express.Router();
 
 router.get("/api/tiktok", async (req, res) => {
@@ -10,69 +9,53 @@ router.get("/api/tiktok", async (req, res) => {
   if (!url) return res.status(400).json({ error: "Missing TikTok video URL (?url=)" });
 
   try {
-    // Get token and cookies from ssstik.io homepage
-    const home = await axios.get("https://ssstik.io/");
-    const $home = cheerio.load(home.data);
-    const token = $home('input[name="token"]').attr("value") || "";
-    const cookie = home.headers["set-cookie"];
+    // Step 1: Get SnapTik home page and extract cookies (for anti-bot, may not be needed)
+    const home = await axios.get("https://snaptik.app/en2");
+    const cookie = home.headers["set-cookie"] ? home.headers["set-cookie"].join("; ") : "";
 
-    // Submit video URL to ssstik.io/abc
+    // Step 2: POST the TikTok URL to SnapTik's endpoint
     const postResp = await axios.post(
-      "https://ssstik.io/",
+      "https://snaptik.app/abc2.php",
       new URLSearchParams({
-        id: url,
-        locale: "en",
-        tt: token,
+        url: url,
+        locale: "en"
       }).toString(),
       {
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: cookie ? cookie.join("; ") : "",
-          "User-Agent": "Mozilla/5.0 (compatible; TikTokDLBot/1.0; +https://github.com/Thenux-ai)",
-        },
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "Cookie": cookie,
+          "User-Agent": "Mozilla/5.0 (compatible; TikTokDLBot/1.0; +https://github.com/Thenux-ai)"
+        }
       }
     );
 
-    // Parse result HTML
+    // Step 3: Parse download links from HTML
     const $ = cheerio.load(postResp.data);
 
-    // Download links extraction
-    const download = {
-      video_no_watermark:
-        $('a.download_link.without_watermark').attr("href") ||
-        $('a:contains("Without watermark")').attr("href") ||
-        "",
-      video_no_watermark_hd:
-        $('a.download_link.without_watermark_hd').attr("href") ||
-        $('a:contains("Without watermark HD")').attr("href") ||
-        "",
-      video_watermark:
-        $('a.download_link.with_watermark').attr("href") ||
-        $('a:contains("With watermark")').attr("href") ||
-        "",
-      audio:
-        $('a.download_link.music').attr("href") ||
-        $('a:contains("Download MP3")').attr("href") ||
-        ""
-    };
+    const resultLinks = [];
+    $("a.button.is-success").each((i, el) => {
+      const text = $(el).text().trim().toLowerCase();
+      const href = $(el).attr("href");
+      if (href && text.includes("download")) resultLinks.push(href);
+    });
 
-    // Meta extraction
-    const meta = {
-      thumb: $("img.result_author").attr("src") || "",
-      desc: $("p.maintext").text() || "",
-      author: $("img.result_author").attr("alt") || ""
-    };
+    // Extract description/thumbnail if possible
+    const thumb = $("img.video-thumb").attr("src") || "";
+    const desc = $("div.video-desc").text() || "";
 
     res.json({
       owner: "Thenux-ai",
       input_url: url,
-      download,
-      meta,
+      download_links: resultLinks,
+      meta: {
+        thumb,
+        desc
+      }
     });
   } catch (e) {
     res.status(500).json({
-      error: "Failed to fetch or parse result",
-      detail: e.message,
+      error: "Failed to fetch or parse SnapTik result",
+      detail: e.message
     });
   }
 });
