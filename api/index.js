@@ -1,63 +1,31 @@
 const axios = require("axios");
-const cheerio = require("cheerio");
 
 module.exports = async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: "Missing TikTok video URL (?url=)" });
 
   try {
-    // Get token and cookies from ssstik.io homepage
-    const home = await axios.get("https://ssstik.io/");
-    const $home = cheerio.load(home.data);
-    const token = $home('input[name="token"]').attr("value") || "";
-    const cookie = home.headers["set-cookie"];
+    // 1. Get the token for the video
+    const resp = await axios.get(`https://api.tikmate.app/api/lookup?url=${encodeURIComponent(url)}`);
+    if (!resp.data || !resp.data.token) {
+      return res.status(500).json({ error: "Could not get video info" });
+    }
 
-    // Submit video URL to ssstik.io/abc
-    const postResp = await axios.post(
-      "https://ssstik.io/abc",
-      new URLSearchParams({
-        id: url,
-        locale: "en",
-        tt: token,
-      }).toString(),
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: cookie ? cookie.join("; ") : "",
-          "User-Agent":
-            "Mozilla/5.0 (compatible; TikTokDLBot/1.0; +https://github.com/Thenux-ai)",
-        },
-      }
-    );
-
-    // Parse the result HTML
-    const $ = cheerio.load(postResp.data);
-
-    // Download links extraction
-    const download = {
-      video_no_watermark: $('a.download_link.without_watermark').attr("href") || $('a:contains("Without watermark")').attr("href") || "",
-      video_no_watermark_hd: $('a.download_link.without_watermark_hd').attr("href") || $('a:contains("Without watermark HD")').attr("href") || "",
-      video_watermark: $('a.download_link.with_watermark').attr("href") || $('a:contains("With watermark")').attr("href") || "",
-      audio: $('a.download_link.music').attr("href") || $('a:contains("Download MP3")').attr("href") || ""
-    };
-
-    // Meta extraction
-    const meta = {
-      thumb: $("img.result_author").attr("src") || "",
-      desc: $("p.maintext").text() || "",
-      author: $("img.result_author").attr("alt") || ""
-    };
+    // 2. Build the download URL
+    const dl_url = `https://tikmate.app/download/${resp.data.token}/${resp.data.id}.mp4`;
 
     res.json({
       owner: "Thenux-ai",
       input_url: url,
-      download,
-      meta
+      download: {
+        video: dl_url,
+        author: resp.data.author_name,
+        thumb: resp.data.cover,
+        desc: resp.data.title
+      }
     });
   } catch (e) {
-    res.status(500).json({
-      error: "Failed to fetch or parse result",
-      detail: e.message,
-    });
+    res.status(500).json({ error: "Failed to fetch/download", detail: e.message });
   }
 };
+      
