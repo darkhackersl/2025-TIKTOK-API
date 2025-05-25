@@ -9,11 +9,11 @@ router.get("/api/tiktok", async (req, res) => {
   if (!url) return res.status(400).json({ error: "Missing TikTok video URL (?url=)" });
 
   try {
-    // Step 1: Get SnapTik home page and extract cookies (for anti-bot, may not be needed)
+    // Get SnapTik home page and extract cookies (for anti-bot, may not be needed)
     const home = await axios.get("https://snaptik.app/en2");
     const cookie = home.headers["set-cookie"] ? home.headers["set-cookie"].join("; ") : "";
 
-    // Step 2: POST the TikTok URL to SnapTik's endpoint
+    // POST the TikTok URL to SnapTik's endpoint
     const postResp = await axios.post(
       "https://snaptik.app/abc2.php",
       new URLSearchParams({
@@ -29,28 +29,50 @@ router.get("/api/tiktok", async (req, res) => {
       }
     );
 
-    // Step 3: Parse download links from HTML
     const $ = cheerio.load(postResp.data);
 
+    // Download links
     const resultLinks = [];
     $("a.button.is-success").each((i, el) => {
       const text = $(el).text().trim().toLowerCase();
       const href = $(el).attr("href");
-      if (href && text.includes("download")) resultLinks.push(href);
+      if (href && text.includes("download")) {
+        resultLinks.push({
+          url: href,
+          label: text
+        });
+      }
     });
 
-    // Extract description/thumbnail if possible
+    // More metadata
     const thumb = $("img.video-thumb").attr("src") || "";
-    const desc = $("div.video-desc").text() || "";
+    const desc = $("div.video-desc").text().trim() || "";
+    const author = $("div.video-author").text().trim().replace(/^@/, "") || "";
+    const title = $("title").text() || "";
+    // Attempt to extract video id and author from the TikTok URL
+    let video_id = "", username = "";
+    try {
+      const match = url.match(/tiktok\.com\/@([^/]+)\/video\/(\d+)/);
+      if (match) {
+        username = match[1];
+        video_id = match[2];
+      }
+    } catch {}
+    // If not in URL, fallback to parsed metadata
+    const meta = {
+      thumb,
+      desc,
+      author: author || username,
+      title,
+      video_id,
+      username: username || author
+    };
 
     res.json({
       owner: "Thenux-ai",
       input_url: url,
       download_links: resultLinks,
-      meta: {
-        thumb,
-        desc
-      }
+      meta
     });
   } catch (e) {
     res.status(500).json({
